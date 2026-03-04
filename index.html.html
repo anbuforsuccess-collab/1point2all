@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FMB Centered A4 Output</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+
+body{
+font-family:Arial;
+margin:0;
+padding:0;
+background:linear-gradient(to right,#1e3c72,#2a5298);
+color:white;
+}
+
+.header{
+padding:10px;
+text-align:center;
+}
+
+.container{
+display:flex;
+flex-wrap:wrap;
+justify-content:center;
+padding:10px;
+}
+
+.box{
+background:white;
+color:black;
+padding:10px;
+border-radius:10px;
+width:350px;
+margin:5px;
+}
+
+.canvas-container{
+overflow:auto;
+border:1px solid #ccc;
+margin:5px;
+flex:1;
+max-width:100%;
+}
+
+canvas{
+background:white;
+display:block;
+margin:auto;
+border:1px solid #000;
+}
+
+input,select,button{
+width:95%;
+padding:6px;
+margin:4px 0;
+}
+
+button{
+background:#1e3c72;
+color:white;
+border:none;
+cursor:pointer;
+margin-top:4px;
+}
+
+/* Calculator */
+
+#calcBtn{
+position:fixed;
+top:10px;
+right:10px;
+background:#ff9800;
+color:white;
+border:none;
+padding:10px 14px;
+border-radius:8px;
+font-size:20px;
+z-index:999;
+width:auto;
+}
+
+#calculator{
+position:fixed;
+top:60px;
+right:10px;
+background:white;
+color:black;
+padding:10px;
+border-radius:10px;
+display:none;
+width:220px;
+z-index:999;
+box-shadow:0 0 10px rgba(0,0,0,0.3);
+}
+
+#calcDisplay{
+width:100%;
+height:35px;
+margin-bottom:5px;
+text-align:right;
+font-size:18px;
+}
+
+.calcGrid{
+display:grid;
+grid-template-columns:repeat(4,1fr);
+gap:5px;
+}
+
+.calcGrid button{
+padding:10px;
+font-size:16px;
+background:#1e3c72;
+color:white;
+}
+
+</style>
+</head>
+
+
+<body>
+
+<!-- Calculator Button -->
+
+<button id="calcBtn" onclick="toggleCalc()">🧮</button>
+
+<div id="calculator">
+
+<input id="calcDisplay" readonly>
+
+<div class="calcGrid">
+
+<button onclick="press('7')">7</button>
+<button onclick="press('8')">8</button>
+<button onclick="press('9')">9</button>
+<button onclick="press('/')">÷</button>
+
+<button onclick="press('4')">4</button>
+<button onclick="press('5')">5</button>
+<button onclick="press('6')">6</button>
+<button onclick="press('*')">×</button>
+
+<button onclick="press('1')">1</button>
+<button onclick="press('2')">2</button>
+<button onclick="press('3')">3</button>
+<button onclick="press('-')">−</button>
+
+<button onclick="press('0')">0</button>
+<button onclick="press('.')">.</button>
+<button onclick="calculateCalc()">=</button>
+<button onclick="press('+')">+</button>
+
+<button onclick="clearCalc()" style="grid-column:span 4;background:red;">C</button>
+
+</div>
+</div>
+
+
+<div class="header">
+<h2>ANBARASAN FMB</h2>
+</div>
+
+
+<div class="container">
+
+
+<div class="box">
+
+<h3>Input</h3>
+
+<input id="ab" placeholder="AB (m)">
+<input id="bc" placeholder="BC (m)">
+<input id="ca" placeholder="CA (m)">
+<input id="ad" placeholder="AD (m)">
+<input id="off" placeholder="Offset (m)">
+
+<label>BC Turn from AB</label>
+<select id="turn">
+<option value="left">Left</option>
+<option value="right">Right</option>
+</select>
+
+<label>D1 from AB</label>
+<select id="side">
+<option value="left">Left</option>
+<option value="right">Right</option>
+</select>
+
+<button onclick="calculate()">Draw</button>
+<button onclick="downloadPDF()">Download PDF</button>
+
+</div>
+
+
+<div class="canvas-container">
+<canvas id="fmbCanvas" width="1400" height="1980"></canvas>
+</div>
+
+</div>
+
+
+
+<script>
+
+let lastValues=null;
+
+
+
+function perp(px,py,x1,y1,x2,y2){
+
+let dx=x2-x1;
+let dy=y2-y1;
+
+let L=Math.sqrt(dx*dx+dy*dy);
+
+let t=((px-x1)*dx+(py-y1)*dy)/(L*L);
+
+let fx=x1+t*dx;
+let fy=y1+t*dy;
+
+let cut=t*L;
+
+let off=Math.sqrt((px-fx)**2+(py-fy)**2);
+
+return {cut:cut,off:off,fx:fx,fy:fy};
+
+}
+
+
+
+
+function calculate(){
+
+let AB=parseFloat(document.getElementById("ab").value);
+let BC=parseFloat(document.getElementById("bc").value);
+let CA=parseFloat(document.getElementById("ca").value);
+let AD=parseFloat(document.getElementById("ad").value);
+let OFF=parseFloat(document.getElementById("off").value);
+
+let turn=document.getElementById("turn").value;
+let side=document.getElementById("side").value;
+
+if(isNaN(AB)||isNaN(BC)||isNaN(CA)||isNaN(AD)||isNaN(OFF)){
+alert("Enter all values");
+return;
+}
+
+lastValues={AB,BC,CA,AD,OFF,turn,side};
+
+drawCanvas(lastValues);
+
+}
+
+
+
+
+function drawCanvas(values){
+
+let {AB,BC,CA,AD,OFF,turn,side}=values;
+
+let Ax=0,Ay=0;
+let Bx=AB,By=0;
+
+let angle=Math.acos((AB*AB+BC*BC-CA*CA)/(2*AB*BC));
+
+if(turn=="right") angle=-angle;
+
+let Cx=Bx+BC*Math.cos(Math.PI-angle);
+let Cy=By+BC*Math.sin(Math.PI-angle);
+
+let Dx=AD;
+let Dy=(side=="left")?OFF:-OFF;
+
+
+
+let bc_res=perp(Dx,Dy,Bx,By,Cx,Cy);
+let ca_res=perp(Dx,Dy,Cx,Cy,Ax,Ay);
+
+
+
+let AD1=Math.sqrt((Dx-Ax)**2+(Dy-Ay)**2);
+let BD1=Math.sqrt((Dx-Bx)**2+(Dy-By)**2);
+let CD1=Math.sqrt((Dx-Cx)**2+(Dy-Cy)**2);
+
+
+
+let tD=AD/AB;
+let Dx_pt=Ax+tD*(Bx-Ax);
+let Dy_pt=Ay+tD*(By-Ay);
+
+let tE=bc_res.cut/BC;
+let Ex_pt=Bx+tE*(Cx-Bx);
+let Ey_pt=By+tE*(Cy-By);
+
+let tF=ca_res.cut/CA;
+let Fx_pt=Cx+tF*(Ax-Cx);
+let Fy_pt=Cy+tF*(Ay-Cy);
+
+
+
+let canvas=document.getElementById("fmbCanvas");
+let ctx=canvas.getContext("2d");
+
+ctx.clearRect(0,0,canvas.width,canvas.height);
+
+
+
+let borderMargin=40;
+
+ctx.strokeStyle="black";
+ctx.lineWidth=4;
+
+ctx.strokeRect(borderMargin,borderMargin,canvas.width-2*borderMargin,canvas.height-2*borderMargin);
+
+
+
+ctx.fillStyle="black";
+ctx.font="20px Arial";
+ctx.textAlign="right";
+ctx.textBaseline="top";
+
+let headerX=canvas.width-borderMargin-10;
+let headerY=borderMargin+5;
+
+let headerLines=["எம் அன்பரசன்","நில அளவர்","பட்டுக்கோட்டை","தஞ்சாவூர்"];
+
+headerLines.forEach((line,i)=>ctx.fillText(line,headerX,headerY+i*26));
+
+
+
+let pts=[
+{x:Ax,y:Ay},
+{x:Bx,y:By},
+{x:Cx,y:Cy},
+{x:Dx_pt,y:Dy_pt},
+{x:Ex_pt,y:Ey_pt},
+{x:Fx_pt,y:Fy_pt},
+{x:Dx,y:Dy}
+];
+
+
+
+let minX=Math.min(...pts.map(p=>p.x));
+let maxX=Math.max(...pts.map(p=>p.x));
+let minY=Math.min(...pts.map(p=>p.y));
+let maxY=Math.max(...pts.map(p=>p.y));
+
+let scaleX=(canvas.width-2*borderMargin)/(maxX-minX);
+let scaleY=(canvas.height-2*borderMargin-200)/(maxY-minY);
+
+let scale=Math.min(scaleX,scaleY);
+
+let shiftX=(canvas.width-(maxX-minX)*scale)/2 - minX*scale;
+let shiftY=(canvas.height-100)/2 + (maxY+minY)/2*scale;
+
+function px(x){return x*scale+shiftX;}
+function py(y){return shiftY-y*scale;}
+
+
+
+ctx.strokeStyle="blue";
+ctx.lineWidth=3;
+
+ctx.beginPath();
+ctx.moveTo(px(Ax),py(Ay));
+ctx.lineTo(px(Bx),py(By));
+ctx.lineTo(px(Cx),py(Cy));
+ctx.lineTo(px(Ax),py(Ay));
+ctx.stroke();
+
+
+
+ctx.fillStyle="black";
+ctx.font="18px Arial";
+ctx.textAlign="center";
+ctx.textBaseline="bottom";
+
+function midText(x1,y1,x2,y2,text){
+
+let mx=(x1+x2)/2;
+let my=(y1+y2)/2;
+
+ctx.fillText(text,px(mx),py(my)-6);
+
+}
+
+midText(Ax,Ay,Bx,By,AB.toFixed(3));
+midText(Bx,By,Cx,Cy,BC.toFixed(3));
+midText(Cx,Cy,Ax,Ay,CA.toFixed(3));
+
+
+
+ctx.strokeStyle="purple";
+ctx.lineWidth=2;
+ctx.setLineDash([10,6]);
+
+ctx.beginPath();
+
+ctx.moveTo(px(Ax),py(Ay));
+ctx.lineTo(px(Dx),py(Dy));
+
+ctx.moveTo(px(Bx),py(By));
+ctx.lineTo(px(Dx),py(Dy));
+
+ctx.moveTo(px(Cx),py(Cy));
+ctx.lineTo(px(Dx),py(Dy));
+
+ctx.stroke();
+
+ctx.setLineDash([]);
+
+
+
+
+ctx.strokeStyle="green";
+ctx.setLineDash([8,4]);
+ctx.lineWidth=2;
+
+ctx.beginPath();
+
+ctx.moveTo(px(Dx_pt),py(Dy_pt));
+ctx.lineTo(px(Dx),py(Dy));
+
+ctx.moveTo(px(Ex_pt),py(Ey_pt));
+ctx.lineTo(px(Dx),py(Dy));
+
+ctx.moveTo(px(Fx_pt),py(Fy_pt));
+ctx.lineTo(px(Dx),py(Dy));
+
+ctx.stroke();
+
+ctx.setLineDash([]);
+
+
+
+
+ctx.fillStyle="red";
+ctx.font="16px Arial";
+ctx.textAlign="center";
+ctx.textBaseline="bottom";
+
+let names=["A","B","C","D","E","F","D1"];
+
+pts.forEach((p,i)=>{
+
+ctx.beginPath();
+ctx.arc(px(p.x),py(p.y),6,0,2*Math.PI);
+ctx.fill();
+
+ctx.fillText(names[i],px(p.x),py(p.y)-8);
+
+});
+
+
+
+ctx.fillStyle="black";
+ctx.font="18px Arial";
+ctx.textAlign="left";
+ctx.textBaseline="top";
+
+let outX=borderMargin+10;
+let outY=borderMargin+10;
+
+let outputs=[
+
+"AD1 = "+AD1.toFixed(3),
+"BD1 = "+BD1.toFixed(3),
+"CD1 = "+CD1.toFixed(3),
+"DD1 = "+Math.sqrt((Dx-Dx_pt)**2+(Dy-Dy_pt)**2).toFixed(3),
+"ED1 = "+Math.sqrt((Dx-Ex_pt)**2+(Dy-Ey_pt)**2).toFixed(3),
+"FD1 = "+Math.sqrt((Dx-Fx_pt)**2+(Dy-Fy_pt)**2).toFixed(3),
+"BE = "+bc_res.cut.toFixed(3),
+"CF = "+ca_res.cut.toFixed(3)
+
+];
+
+outputs.forEach((t,i)=>{
+
+ctx.fillText(t,outX,outY+i*22);
+
+});
+
+}
+
+
+
+async function downloadPDF(){
+
+if(!lastValues){
+alert("Calculate first!");
+return;
+}
+
+let canvas=document.getElementById("fmbCanvas");
+
+const { jsPDF } = window.jspdf;
+
+let pdf=new jsPDF('p','mm','a4');
+
+let imgData=canvas.toDataURL("image/png");
+
+let pdfWidth=210;
+
+let pdfHeight=canvas.height*pdfWidth/canvas.width;
+
+pdf.addImage(imgData,'PNG',0,0,pdfWidth,pdfHeight);
+
+pdf.save("FMB_Output.pdf");
+
+}
+
+
+
+/* Calculator Functions */
+
+function toggleCalc(){
+
+let c=document.getElementById("calculator");
+
+c.style.display=(c.style.display=="none")?"block":"none";
+
+}
+
+function press(val){
+
+document.getElementById("calcDisplay").value+=val;
+
+}
+
+function clearCalc(){
+
+document.getElementById("calcDisplay").value="";
+
+}
+
+function calculateCalc(){
+
+let exp=document.getElementById("calcDisplay").value;
+
+try{
+document.getElementById("calcDisplay").value=eval(exp);
+}catch{
+alert("Invalid");
+}
+
+}
+
+</script>
+
+</body>
+</html>
